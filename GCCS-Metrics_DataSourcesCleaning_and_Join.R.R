@@ -20,8 +20,6 @@ install.packages("tidyr")
 library(tidyr)
 install.packages("tidyverse")
 library(tidyverse)
-install.packages("stats")
-library(stats)
 
 
 ## 5 Data sources (dont combine SGSV) to combine into one dataset
@@ -58,46 +56,65 @@ BGCI_allcrops_unformatted <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Dat
 # colnames(BGCI_allcrops_unformatted)
 BGCI_allcrops <- BGCI_allcrops_unformatted
 
-#rename all columns according to Genesys naming style:
-colnames(BGCI_allcrops) <- c("source","fullSciName","fullTaxa","accepted","plantSearchId",
-                              "cultivar","exSituSiteGardenSearchId","instName","city",
-                              "stateProvince","origCtyFullName","country2", #2 letter abrev for origCty
-                              "latitude", #of garden, dont use
-                              "longitude", #of garden, dont use 
-                              "germplasmPlant", "storage", #changed from germplasmSeed
-                              "germplasmPollen", "germplasmExplant",
-                              "acceptedNamePlantSearch","synNamePlantSearch","addedSubmittedNames")
+# Rename all columns according to Genesys naming style
+colnames(BGCI_allcrops) <- c("source", "fullSciName", "fullTaxa", "accepted", "plantSearchId",
+                             "cultivar", #dropped cultivar
+                             "exSituSiteGardenSearchId", "instName", "city",
+                             "stateProvince", "origCtyFullName", "country2", # 2 letter abrev for origCty
+                             "latitude", # of garden, don't use
+                             "longitude", # of garden, don't use 
+                             "germplasmPlant", "germplasmSeed", 
+                             "germplasmPollen", "germplasmExplant",
+                             "acceptedNamePlantSearch", "synNamePlantSearch", "addedSubmittedNames")
 
-# Fields we want to keep:
+# Select fields to keep and remove special characters
 library(magrittr)
 library(dplyr)
-BGCI_allcrops <- subset(BGCI_allcrops, 
-                        select = c(fullSciName, fullTaxa, 
-                                                  cultivar, origCtyFullName,
-                                                  country2, storage)) %>%
-                        mutate(across(everything(), ~gsub("[[:punct:]]", "", .x)))  #remove special characters
+BGCI_allcrops <- BGCI_allcrops %>%
+  select(fullSciName, fullTaxa, origCtyFullName, country2, germplasmPlant, germplasmSeed, 
+         germplasmPollen, germplasmExplant) %>%
+  mutate(across(everything(), ~gsub("[[:punct:]]", "", .x)))  # Remove special characters, noticed lots of special characters
 
-# Add fields: data source
+
+# Add field: data source
 BGCI_allcrops <- cbind(BGCI_allcrops, data_source = "BGCI")
-
 
 # Separate fields: fullSciName, still have fullTaxa
 # fullSciName into genus and species
 library(tidyr)
 BGCI_allcrops  <- BGCI_allcrops  %>% separate(fullSciName, c('genus', 'species'))
+ 
+# Combine genus and species to fill out fullTaxa only if it is empty (106 rows)
+BGCI_allcrops <- BGCI_allcrops %>% 
+  mutate(fullTaxa = if_else(is.na(fullTaxa) | fullTaxa == "", paste(genus, species, sep = " "), fullTaxa))
 
 
-## Encode the storage field with presence of seed values "1"
-# replace '1' in storage column with '10' (code for seed)
-BGCI_allcrops['storage'][BGCI_allcrops['storage'] == 1] <- 10 
-BGCI_allcrops['storage'][BGCI_allcrops['storage'] == 0] <- NA
-
-### need to combine other germplasm storage columns- germplasmPlant, germplasmPollen, germplasmExplant
-## encode as "other" storage 
+### Encode all fields relevant to storage fields
+## germplasmSeed == 10, 13 (seed, long-term)
+## germplasmPlant == 20 (field)
+## germplasmPollen == 99 (other)
+## germplasmExplant == 30 (in vitro)
 
 
+# replace '1' in storage column with storage code(s)
+# change '0' to NAs (no data)
+BGCI_allcrops['germplasmSeed'][BGCI_allcrops['germplasmSeed'] == 1] <- "10; 13"
+BGCI_allcrops['germplasmSeed'][BGCI_allcrops['germplasmSeed'] == 0] <- NA
 
+BGCI_allcrops['germplasmPlant'][BGCI_allcrops['germplasmPlant'] == 1] <- 20
+BGCI_allcrops['germplasmPlant'][BGCI_allcrops['germplasmPlant'] == 0] <- NA
 
+BGCI_allcrops['germplasmPollen'][BGCI_allcrops['germplasmPollen'] == 1] <- 99
+BGCI_allcrops['germplasmPollen'][BGCI_allcrops['germplasmPollen'] == 0] <- NA
+
+BGCI_allcrops['germplasmExplant'][BGCI_allcrops['germplasmExplant'] == 1] <- 30
+BGCI_allcrops['germplasmExplant'][BGCI_allcrops['germplasmExplant'] == 0] <- NA
+
+# combine all 4 fields into one storage field 
+# keep all data across all fields, separate with ; accoring to Genesys listing standard
+BGCI_allcrops <- BGCI_allcrops %>% 
+        mutate(storage = pmap_chr(list(germplasmSeed, germplasmPlant, germplasmPollen, germplasmExplant), ~ paste(na.omit(c(...)), collapse = "; "))) %>% 
+        select(-germplasmSeed, -germplasmPlant, -germplasmPollen, -germplasmExplant)
 
 
 ## Encode origCty field
@@ -105,7 +122,7 @@ library(readr)
 geo_names <- read_csv("C:/Users/sgora/Desktop/GCCS-Metrics/Data/Passport/geo_names.csv")
 
 ## subset only the relevant column to join:
-# 2 letter abreviation for country and the 3 letter abreviation
+# 2 letter abbreviation for country and the 3 letter abbreviation
 geo_names_2 <- subset(geo_names, select = c(country2, country3))
 
 library(dplyr)
@@ -141,7 +158,7 @@ TNRS_BGCI_results_unique <- TNRS_BGCI_results %>%
     acceptedNameRank_TNRS = first(acceptedNameRank_TNRS)
   )
 
-# Join the data frames
+# Join data frames
 BGCI_allcrops <- BGCI_allcrops %>%
   left_join(TNRS_BGCI_results_unique, by = "fullTaxa")
 
@@ -154,11 +171,6 @@ BGCI_allcrops <- BGCI_allcrops %>%
 #then split the field by acceptedGenus_TNRS 
 BGCI_allcrops <- BGCI_allcrops %>% 
   mutate(acceptedGenus_TNRS = sub(" .*", "", acceptedName_TNRS))
-
-
-## Clean country field according to notes
-
-
 
 
 View(BGCI_allcrops)
@@ -184,7 +196,7 @@ colnames(WIEWS_allcrops) <- c("holdingCty","instCode", "acceNumb", "fullTaxa", "
 # Fields we want to keep:
 WIEWS_allcrops <- subset(WIEWS_allcrops, select = c(holdingCty, instCode, acceNumb, 
                             fullTaxa, genus, species, cropName, origCty, 
-                            sampStat, duplSite, latitude,longitude, # acqSRC_WIEWS, 
+                            sampStat, duplSite, latitude,longitude, 
                             storage, mlsStat))
 
 # Add field: data source
@@ -237,7 +249,7 @@ TNRS_WIEWS_results_unique <- TNRS_WIEWS_results %>%
     acceptedNameRank_TNRS = first(acceptedNameRank_TNRS)
   )
 
-# Join the data frames
+# Join data frames
 WIEWS_allcrops <- WIEWS_allcrops %>%
   left_join(TNRS_WIEWS_results_unique, by = "fullTaxa")
 
@@ -251,7 +263,15 @@ WIEWS_allcrops <- WIEWS_allcrops %>%
 WIEWS_allcrops <- WIEWS_allcrops %>% 
   mutate(acceptedGenus_TNRS = sub(" .*", "", acceptedName_TNRS))
 
-## Clean country field according to notes
+## Clean country field according to notes from CountryCodes_toClean file
+WIEWS_allcrops['origCty'][WIEWS_allcrops['origCty'] == "ANT"] <- "ATG"
+WIEWS_allcrops['origCty'][WIEWS_allcrops['origCty'] == "BYS"] <- "BLR"
+WIEWS_allcrops['origCty'][WIEWS_allcrops['origCty'] == "SCG"] <- "SER, MNE"
+WIEWS_allcrops['origCty'][WIEWS_allcrops['origCty'] == "YUG"] <- "SLO, HRV, BIH, SRB, MNE, MKD, XKX"
+WIEWS_allcrops['origCty'][WIEWS_allcrops['origCty'] == "CSK"] <- "CZE, SVK"
+WIEWS_allcrops['origCty'][WIEWS_allcrops['origCty'] == "SUN"] <- "RUS"
+
+
 
 
 
@@ -281,14 +301,10 @@ colnames(Genesys_allcrops) <- c("rowNumb","source","instCode","doi","acceNumb","
                                    "duplInstName","storage","mlsStat","acceUrl","remarks",
                                   "dataProviderId_Genesys","uuId", "lastModified" )
 ## fields to keep: 
-##### KEPT WAYYYY TOO MANY FIELDS, KEEP CUTTING DOWN ######
 Genesys_allcrops <- subset(Genesys_allcrops, select = c(instCode, acceNumb, 
                                                     genus, species, acceptedName_TNRS,
-                                                    # spAuthor, subTaxa, subTAuthor, doi, acqDate,
                                                     cropName_Genesys, sampStat, acceName_Genesys,
                                                     origCty, latitude,longitude,
-                                                    # donorCode_Genesys,donorName_Genesys, donorNumb_Genesys,
-                                                    # otherNumb_Genesys, ancest_Genesys, duplInstName,
                                                     duplSite, storage,
                                                     mlsStat))
 # Add field: data source 
@@ -342,13 +358,20 @@ Genesys_allcrops <- Genesys_allcrops %>%
   mutate(acceptedGenus_TNRS = sub(" .*", "", acceptedName_TNRS))
 
 
-## Clean country field according to notes
+## Clean country field according to notes from CountryCodes_toClean file
+Genesys_allcrops['origCty'][Genesys_allcrops['origCty'] == "XAE"] <- "CYP"
+Genesys_allcrops['origCty'][Genesys_allcrops['origCty'] == "ANT"] <- "ATG"
+Genesys_allcrops['origCty'][Genesys_allcrops['origCty'] == "XAM"] <- "PHL"
+Genesys_allcrops['origCty'][Genesys_allcrops['origCty'] == "ZAR"] <- "COD"
+Genesys_allcrops['origCty'][Genesys_allcrops['origCty'] == "ROM"] <- "ROU"
+Genesys_allcrops['origCty'][Genesys_allcrops['origCty'] == "BYS"] <- "BLR"
+Genesys_allcrops['origCty'][Genesys_allcrops['origCty'] == "SCG"] <- "SER, MNE"
+Genesys_allcrops['origCty'][Genesys_allcrops['origCty'] == "YUG"] <- "SLO, HRV, BIH, SRB, MNE, MKD, XKX"
+Genesys_allcrops['origCty'][Genesys_allcrops['origCty'] == "CSK"] <- "CZE, SVK"
+Genesys_allcrops['origCty'][Genesys_allcrops['origCty'] == "SUN"] <- "RUS"
 
 
 View(Genesys_allcrops)
-
-
-
 
 
 
@@ -429,7 +452,6 @@ colnames(GBIF_allcrops) <- c("acceNumb","sharing","bibliographicCitation","langu
                              )
 
 ## fields to keep: 
-##### KEPT WAYYYY TOO MANY FIELDS, KEEP CUTTING DOWN ######
 GBIF_allcrops <- subset(GBIF_allcrops, select = c(acceNumb, instAcronym,storage, 
                                                   country2, latitude, longitude, 
                                                   fullTaxa, genusSynonym, genus, 
@@ -470,18 +492,24 @@ GBIF_allcrops <- GBIF_allcrops %>%
                     country3 = if_else(is.na(country3), origCty, country3)) 
 
 
-# Country clean:
+# Country clean, Part I:
 # fix the countries that were labled "Z01", "Z06" and "Z07" and drop the extra country field
-# move over the data from country3 field 
+# cleaned field by replacing with correct country code (variable) from country3 field
 # only for those rows with countries that were labled as Z01, Z06, Z07
 GBIF_allcrops <- GBIF_allcrops %>% 
                     mutate( origCty = if_else(origCty %in% c("Z01", "Z06", "Z07"), country3, origCty) )%>%
                     select(-country3)
 
-View(GBIF_allcrops)
+# Country clean, Part II
+## Clean other errors in country field according to notes from CountryCodes_toClean file
+GBIF_allcrops['origCty'][GBIF_allcrops['origCty'] == "ZNC"] <- "CYP"
+GBIF_allcrops['origCty'][GBIF_allcrops['origCty'] == "XAD"] <- "CYP"
+GBIF_allcrops['origCty'][GBIF_allcrops['origCty'] == "XAC"] <- "IRN"
+GBIF_allcrops['origCty'][GBIF_allcrops['origCty'] == "BYS"] <- "BLR"
 
 
-## Encode storage field with WIEWS codes
+
+## Encode all unique notes in storage field with WIEWS codes
 GBIF_allcrops['storage'][GBIF_allcrops['storage'] == "Cryo-conserved seeds;-20 °C" ] <- "10; 13; 40"
 GBIF_allcrops['storage'][GBIF_allcrops['storage'] == "Cryo-conserved seeds;4° C (Paper Bags), -20 °C (Sealed Cans)"] <- "10; 13; 40"
 GBIF_allcrops['storage'][GBIF_allcrops['storage'] == "Dried at 4 °C;Cryo-conserved seeds;-20 °C"] <- "10; 13; 40"
@@ -539,7 +567,7 @@ TNRS_GBIF_results_unique <- TNRS_GBIF_results %>%
                                       acceptedName_TNRS = first(acceptedName_TNRS),
                                       acceptedNameRank_TNRS = first(acceptedNameRank_TNRS))
 
-# Join the data frames
+# Join data frames
 GBIF_allcrops <- GBIF_allcrops %>%
                   left_join(TNRS_GBIF_results_unique, by = "fullTaxa")
 
@@ -552,10 +580,6 @@ GBIF_allcrops <- GBIF_allcrops %>%
 #then split the field by acceptedGenus_TNRS 
 GBIF_allcrops <- GBIF_allcrops %>% 
                  mutate(acceptedGenus_TNRS = sub(" .*", "", acceptedName_TNRS))
-
-
-## Clean country field according to notes
-
 
 
 View(GBIF_allcrops)
@@ -628,7 +652,7 @@ TNRS_SGSV_results_unique <- TNRS_SGSV_results %>%
                                         acceptedName_TNRS = first(acceptedName_TNRS),
                                         acceptedNameRank_TNRS = first(acceptedNameRank_TNRS))
 
-# Join the data frames
+# Join data frames
 SGSV_allcrops <- SGSV_allcrops %>%
                   left_join(TNRS_SGSV_results_unique, by = "fullTaxa")
 
@@ -641,13 +665,6 @@ SGSV_allcrops <- SGSV_allcrops %>%
 #then split the field by acceptedGenus_TNRS 
 SGSV_allcrops <- SGSV_allcrops %>% 
                   mutate(acceptedGenus_TNRS = sub(" .*", "", acceptedName_TNRS))
-
-## Clean country field according to notes
-
-
-
-
-
 
 
 ## Fill out isCrop field
@@ -665,6 +682,41 @@ SGSV_allcrops <- SGSV_allcrops %>% mutate(isCrop = isCrop_vector)
 ### Fill out isCWR field (Crop Wild Relative field)
 # Add column assgning all "no"s in isCrop as "yes"s in isCWR
 SGSV_allcrops <- SGSV_allcrops %>% mutate(isCWR = if_else(isCrop == "N", "Y", "N"))
+
+
+
+
+
+
+##### CK and SG decided to re-assign isCrop and isCWR in an alterntive way
+### found issues when assigning isInprimaryRegions based on sampStat
+
+## Re-assign CWRs: 
+#  Step 1: re-assign isCrop
+# assign isCrop=Y, for sampSat= 100s
+# assign isCrop= N, for sampStat=  400s, 500, 600
+# What abt weedy?= 200? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+#  Then assign all rows with NAs/not filled in, 
+# assign isCrop=Y based on fullTaxa from croplist
+# assign isCrop=Y for special cases (entire genus isCrop =Y)
+# assign isCrop=N for the remaining NAs 
+
+# Then assign isCWR  based on isCrop
+# isCWR=Y if isCrop=N
+# isCWR=N if isCrop=Y
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -717,8 +769,16 @@ SGSV_allcrops <- SGSV_allcrops %>% select(-cropStrategy.y)
 SGSV_allcrops <- SGSV_allcrops %>% 
   rename(cropStrategy = cropStrategy.x)
 
+# Check if any rows didnt get filled out with crop strategy
+na_count <- SGSV_allcrops %>% summarise(na_count = sum(is.na(cropStrategy)))
+# There are no rows with NA = cropStrategy 
+na_rows <- SGSV_allcrops %>% filter(is.na(cropStrategy))
+view(na_rows)
+
+
 # drop row if SGSV dataset doesnt have our crop
-SGSV_allcrops <- SGSV_allcrops %>% filter(!is.na(cropStrategy))
+# dont need this, there are no NAs after above code
+# SGSV_allcrops <- SGSV_allcrops %>% filter(!is.na(cropStrategy))
 
 
 
@@ -733,7 +793,7 @@ SGSV_allcrops <- SGSV_allcrops %>% filter(!is.na(cropStrategy))
 # filter by acceNumb AND instCode
 library(dplyr)
 
-# Check for duplications/common records between WIEWS and Genesys
+# Check for duplication/common records between WIEWS and Genesys
 common_rows <- inner_join(WIEWS_allcrops, Genesys_allcrops, by = c("acceNumb", "instCode"))
 print(common_rows)
 duplications_removedfromWIEWS <- common_rows
@@ -743,7 +803,7 @@ duplications_removedfromWIEWS <- common_rows
 # if acceNumb and instCode are the same in Genesys and WIEWS, then remove row/accession record in WIEWS
 WIEWS_allcrops_duprmv <- WIEWS_allcrops %>%
   anti_join(Genesys_allcrops, by = c("acceNumb", "instCode"))
-# over 1M rows of data lost
+# over 1M rows of common data removed
 
 library(write.csv)
 write_csv(WIEWS_allcrops_duprmv, "C:/Users/sgora/Desktop/GCCS-Metrics/Data/FAOWIEWS_data/WIEWS_allcrops_duprmv.csv")
@@ -783,10 +843,7 @@ class(GBIF_allcrops$acceNumb) #check
 
 # combine all data sources
 combined_allcrops <-  bind_rows(BGCI_allcrops, Genesys_allcrops, WIEWS_allcrops_duprmv, GBIF_allcrops) 
-
-# add a column that is row number, named index
-combined_allcrops$index <- 1:nrow(combined_allcrops)
-
+View(combined_allcrops)
 
 # Summary of data by data source
 combined_allcrops_sum <- combined_allcrops %>%
@@ -815,82 +872,32 @@ combined_allcrops <- read_csv("C:/Users/sgora/Desktop/GCCS-Metrics/Data/Combined
 View(combined_allcrops)
 
 
-# fix the issue of not all crops are filled out
-# colin went through, can add 32 rows back in later 
-
-# temp fix: 
-# for now, just dropped the rows (32 rows) that have crop strategy = NA
-combined_allcrops <- combined_allcrops %>% filter(!is.na(cropStrategy))
-
-## need to go and add in the 32 rows of useable data 
 
 
+## Clean taxon names or genus names for 32 rows to keep from the empty_cropStrategies file
+# special cases, 4 errors to fix 
+empty_cropstrategies <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/empty_cropstrategies_ck.xlsx")
+rows_to_keep <- empty_cropstrategies %>% filter(action == "keep")
 
 
-## Institution international status field
-# holdingInst_internationalStatus, Y/N, based on instCode ***
-
-# read in international institutions list
-library(readr)
-library(readxl)
-institute_names <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/WIEWS_institutes_2020.xlsx")
-
-internationalInst <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_internationalgenebankslist.xlsx")
-
-## subset only the relevant column to join:
-# 3 letter ISO3 institute code and the full name of the institute
-institute_names_full <- subset(institute_names, select = c(INSTCODE, FULL_NAME))
-
-#rename relevant columns 
-institute_names_full <- institute_names_full %>% 
-  rename( instName= FULL_NAME, instCode = INSTCODE) %>%
-  drop_na()
-
-library(dplyr)
-internationalInst <- internationalInst %>%
-  left_join(institute_names_full, by = "instName", relationship= "many-to-many")
-
-## save 
-library(writexl)
-write_xlsx(internationalInst, "C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_internationalgenebankslist_codes2.xlsx")
+## Fix spelling errors: 
+# replace "Pennisteum" with "Pennisetum" in all cases (1 row)
+# replace "Indgofera" with "Indigofera" in all cases (6 rows)
+combined_allcrops <- combined_allcrops %>% 
+  mutate(across(everything(), ~ gsub("Pennisteum", "Pennisetum", .))) %>% 
+  mutate(across(everything(), ~ gsub("Indgofera", "Indigofera", .)))
 
 
-
-### fill out internationalStatus column 
-## subset only the relevant column of names list
-internationalInst <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_internationalgenebankslist_codes2.xlsx")
-internationalInst <- subset(internationalInst, select = c(instName, internationalStatus))
-
-internationalInstCodes <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_internationalgenebankslist_codes2.xlsx")
-internationalInstCodes <- subset(internationalInstCodes, select = c(instCode, internationalStatus)) %>%
-  drop_na()
+# overwrite names in row with Alocasia portora (filled out in the wrong fields and odd space removed) fill out in the correct fields
+combined_allcrops <- combined_allcrops %>% 
+  mutate( fullTaxa = if_else(acceptedName_TNRS == " Alocasia portora", "Alocasia portora", fullTaxa), 
+          genus = if_else(acceptedName_TNRS == " Alocasia portora", "Alocasia", genus), 
+          species = if_else(acceptedName_TNRS == " Alocasia portora", "portora", species), 
+          cropName = if_else(acceptedName_TNRS == " Alocasia portora", "Aroids", cropName),
+          acceptedName_TNRS = if_else(acceptedName_TNRS == " Alocasia portora", "Alocasia portora", acceptedName_TNRS))
 
 
-#join internationalStatus column from institution code
-library(dplyr)
-combined_allcrops <- combined_allcrops %>% left_join(internationalInstCodes, combined_allcrops, by = c("instCode"))
-
-
-### Fill out isCrop field
-## based on TNRS clean taxa field and Crop List 
-croplist <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_croplist.xlsx")
-
-
-# based on "acceptedName_TNRS" field 
-# isCrop = Y if names match
-# isCrop = N if does not match
-isCrop_vector <- ifelse(combined_allcrops$acceptedName_TNRS %in% croplist$Taxa_main, "Y", "N")
-
-# add vector to dataframe
-combined_allcrops <- combined_allcrops %>% mutate(isCrop = isCrop_vector)
-
-### Fill out isCWR field (Crop Wild Relative field)
-# Add column assgning all "no"s in isCrop as "yes"s in isCWR
-combined_allcrops <- combined_allcrops %>% mutate(isCWR = if_else(isCrop == "N", "Y", "N"))
-
-
-
-# then fill out strategy field
+# then fill out cropStrategy field
 # by cleaned genus 
 # join Genera_primary in croplist with Genus_cleaned in combined_allcrops
 croplist <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_croplist.xlsx")
@@ -906,6 +913,7 @@ croplist_strategy <- croplist_strategy %>%
 library(dplyr)
 combined_allcrops <- combined_allcrops %>%
   left_join(croplist_strategy, by = "acceptedGenus_TNRS", relationship= "many-to-many")
+
 
 
 ######## run with original genus to fill out the rest of the crop strategies
@@ -932,180 +940,328 @@ combined_allcrops <- combined_allcrops %>%
 combined_allcrops <- combined_allcrops %>%
   mutate(cropStrategy.x = if_else(is.na(cropStrategy.x), cropStrategy.y, cropStrategy.x))
 
-
 ## drop extra column of cropStrategy
 combined_allcrops <- combined_allcrops %>% select(-cropStrategy.y)
 
 # rename the cropStrategy.x column to just cropStrategy
 combined_allcrops <- combined_allcrops %>% 
   rename(cropStrategy = cropStrategy.x)
+
+
+# view how many rows didnt get filled out with crop strategy
+na_count <- combined_allcrops %>% summarise(na_count = sum(is.na(cropStrategy)))
+# View the rows with NA values
+na_rows <- combined_allcrops %>% filter(is.na(cropStrategy))
+view(na_rows)
+# saved these NA rows as empty crop strategies and asked CK to review
+
+
+# fix the issue of not all crops are filled out
+# some have crop strategy = Na
+# CK reviewed and suggested to keep 32 rows (and drop the remaining)
+empty_cropstrategies <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/empty_cropstrategies_ck.xlsx")
+
+# Make sure columns match and are in same format
+empty_cropstrategies <- empty_cropstrategies %>% 
+  mutate( latitude = as.character(latitude), longitude = as.character(longitude), 
+          sampStat = as.character(sampStat) ) 
+combined_allcrops <- combined_allcrops %>% 
+  mutate( latitude = as.character(latitude), longitude = as.character(longitude), 
+          sampStat = as.character(sampStat) ) 
+
+# Identify common columns excluding "action" and "corrected" 
+common_columns <- intersect(names(combined_allcrops), names(empty_cropstrategies)) 
+common_columns <- common_columns[!common_columns %in% c("action", "corrected")] 
+
+# Filter rows in empty_cropstrategies where action is "delete" 
+rows_to_delete <- empty_cropstrategies %>% 
+  filter(action == "delete") %>% 
+  select(all_of(common_columns)) %>% 
+  distinct() 
+
+# Make sure no type mismatches by converting all columns in rows_to_delete to character 
+rows_to_delete <- rows_to_delete %>% mutate(across(everything(), as.character)) 
+combined_allcrops <- combined_allcrops %>% mutate(across(everything(), as.character)) 
+
+# Remove these rows from combined_allcrops 
+combined_allcrops <- combined_allcrops %>% anti_join(rows_to_delete, by = common_columns)
+
+
+# Fix cropStrategy field blank error with note from CK in empty_cropStrategies file
+# if "Faba vulgaris is in fullTaxa, then fill out cropStrategy field with Faba bean
+combined_allcrops <- combined_allcrops %>% 
+  mutate(cropStrategy = if_else(str_detect(fullTaxa, "Faba vulgaris"), "Faba bean", cropStrategy))
+
+
+## drop all remaining rows with cropStrategy = Na
+## ALL == Pisum sativum (already identified to drop by CK)
+## suspecting these were added in via later cleaning stages, post CK review of empty_cropStrategies file
+combined_allcrops <- combined_allcrops %>% drop_na(cropStrategy)
+
+
+# Check all rows have cropStrategy filled out (no Nas)
+na_count <- combined_allcrops %>% summarise(na_count = sum(is.na(cropStrategy)))
+# View the rows with NA values
+na_rows <- combined_allcrops %>% filter(is.na(cropStrategy))
+view(na_rows)
+
+# all special cases were also correctly labeled with crop strategy 
+# ALL genera for Cajanus, Cenchrus, Eragrostis, Glycine, Pennisetum, Vigna were labeled with the correct strategy
+
+
+
+
+### Fill out internationalStatus column 
+## subset only the relevant column of names list
+library(readxl)
+internationalInst <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_internationalgenebanks_list.xlsx")
+internationalInst <- subset(internationalInst, 
+                            select = c(instCode, internationalStatus)) %>% 
+                            distinct()
+View(internationalInst)
+
+#join internationalStatus column by institution code
+library(dplyr)
+combined_allcrops <- combined_allcrops %>% 
+  left_join(internationalInst, combined_allcrops, by = c("instCode"))
+
+# All cells are filled in if Y= international
+# fill out N= not international
+# Replace all NA values in the internationalStatus column with "N" 
+combined_allcrops <- combined_allcrops %>% 
+  mutate(internationalStatus = ifelse(is.na(internationalStatus), "N", internationalStatus))
 View(combined_allcrops)
 
 
 
-na_count <- combined_allcrops_test %>% summarise(na_count = sum(is.na(cropStrategy.y)))
-na_rows <- combined_allcrops_test %>% filter(is.na(cropStrategy.x)) # View the rows with NA values na_rows
+
+##### CK and SG decided to re-assign isCrop and isCWR in an alternative way 2024_12_12
+### found issues when assigning isInprimaryRegions based on sampStat (later on)
+
+## Re-assign isCrop and isCWR, first based on sampStat: 
+
+# What abt weedy?= 200? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Assign isCrop based on sampStat values 
+# assign isCrop=Y, for sampSat= 100s
+# assign isCrop= N, for sampStat=  400s, 500, 600
+# keep all other rows as NA
+combined_allcrops <- combined_allcrops %>% 
+  mutate(isCrop = case_when( sampStat %in% 100:199 ~ "Y", sampStat %in% c(400:499, 500, 600) ~ "N", 
+                             TRUE ~ NA_character_ ))
 
 
+#  Then assign all rows with NAs/not filled in, based on croplist (fullTaxa and genus)
+# assign isCrop=Y based on fullTaxa from croplist
+# assign isCrop=Y for special cases (entire genus isCrop =Y)
+# assign isCrop=N for the remaining NAs 
+# keep all data if already filled in
 
-# then fill out strategy field
-# by original genus 
-# join Genera_primary in croplist with genus in combined_allcrops
+### Fill out other rows that are NA for the isCrop field based on croplist
+## based on TNRS clean taxa field and Crop List 
 croplist <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_croplist.xlsx")
 
+# based on "acceptedName_TNRS" field 
+# isCrop = Y if names match
+# isCrop = N if does not match
+isCrop_vector <- ifelse(combined_allcrops$acceptedName_TNRS %in% croplist$Taxa_main, "Y", "N")
 
-# this code didnt work, delete below
-# add Crop Descriptors field
-# by Crop
-# join cropStrategy (AKA CROP) in croplist with cropStrategy in combined_allcrops
-# croplist <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_croplist.xlsx")
-
-## subset only the relevant column to join:
-# croplist_descriptor <- subset(croplist, select = c('CropStrategy', 'HasCropDescriptor', 'Crop Descriptor Link'))
-
-#rename relevant columns 
-# croplist_descriptor <- croplist_descriptor %>% rename( cropStrategy = CropStrategy, hasCropDescriptor = HasCropDescriptor, cropDescriptorLink = `Crop Descriptor Link` )
-
-# library(dplyr)
-# combined_allcrops <- combined_allcrops %>%
-#  left_join(croplist_descriptor, by = "cropStrategy", relationship= "many-to-many")
+# fill in isCrop field ONLY where it is NA, dont overwrite existing data
+combined_allcrops <- combined_allcrops %>% 
+  mutate(isCrop = ifelse(is.na(isCrop), isCrop_vector, isCrop))
 
 
+# special cases have all genera that are the crop 
+specialcases <- c("Cajanus", "Cenchrus", "Eragrostis", "Glycine", "Pennisetum", "Vigna") 
 
+# Create regex pattern 
+pattern <- paste(specialcases, collapse = "|") 
+
+# Update isCrop = "Y" if genus or acceptedName_TNRS contains any of the specified special cases 
+# dont overwrite isCrop data if sampStat = 400s, 500, 600
+combined_allcrops <- combined_allcrops %>% 
+  mutate(isCrop = ifelse((!sampStat %in% c(400:499, 500, 600)) & 
+                           (str_detect(genus, regex(pattern, ignore_case = TRUE)) | 
+                              str_detect(acceptedName_TNRS, regex(pattern, ignore_case = TRUE))), "Y", isCrop ))
+
+ 
+# Check all rows have isCrop filled out (no Nas)
+na_count <- combined_allcrops %>% summarise(na_count = sum(is.na(isCrop)))
+na_count
+# View the rows with NA values, should be 0 rows
+na_rows <- combined_allcrops %>% filter(is.na(isCrop))
+view(na_rows)
+
+
+
+
+### Fill out isCWR field (Crop Wild Relative field)
+# Add column assigning all "no"s in isCrop as "yes"s in isCWR, and vice versa
+combined_allcrops <- combined_allcrops %>% 
+     mutate(isCWR = if_else(isCrop == "N", "Y", "N"))
+
+View(combined_allcrops)
 
 
 
 
 
 # add Annex I field
-# Use Annex1 guidefile combined with taxon field
+# Use annex1 guidefile combined with taxon field
 
-# join Annex1 (and Annex1inclusions) field in croplist with cleaned taxon field in combined_allcrops
+# join annex1 (and annex1inclusions) field in croplist with cleaned taxon field in combined_allcrops
 croplist <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_croplist.xlsx")
 
 ## subset only the relevant column(s) to join:
-croplist_Annex1 <- subset(croplist, select = c(Genera_primary, Annex1, Annex1inclusions))
+croplist_annex1 <- subset(croplist, select = c(Genera_primary, Annex1)) %>% 
+  rename(annex1 = Annex1, acceptedGenus_TNRS = Genera_primary)
+View(croplist_annex1)
 
-
-# rename the primary genus column in croplist to "acceptedName_TNRS"
-croplist_Annex1 <- croplist_Annex1 %>% 
-  rename(acceptedGenus_TNRS = Genera_primary)
-
-# join 2 datsets by genus, and fill out Annex1 field if isCrop=Y
-# isCrop = N, then Annex1 field = NA
+# join 2 datsets by genus, and fill out annex1 field if isCrop=Y
+# isCrop = N, then annex1 field = NA
 # Join the datasets by acceptedGenus_TNRS 
 combined_allcrops <- combined_allcrops %>% 
-  left_join(croplist_Annex1, by = "acceptedGenus_TNRS") 
+  left_join(croplist_annex1, by = "acceptedGenus_TNRS")
 
-# Fill out the Annex1 field from croplist_Annex1 only if isCrop is "Y" and set to NA if isCrop is "N" 
+
+## fill out the NAs in annex1 field based on genus field 
+# run by genus if there are NAs 
+croplist <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_croplist.xlsx")
+croplist_annex1 <- subset(croplist, select = c(Genera_primary, Annex1)) %>% 
+  rename(annex1 = Annex1, genus = Genera_primary)
+combined_allcrops <- combined_allcrops %>% left_join(croplist_annex1, by = "genus")
+
+
+# Fill NAs in annex1.x with annex1.y and vice versa 
 combined_allcrops <- combined_allcrops %>% 
-  mutate(Annex1 = case_when( isCrop == "Y" ~ croplist_Annex1$Annex1[match(acceptedGenus_TNRS, croplist_Annex1$acceptedGenus_TNRS)], 
-                             isCrop == "N" ~ NA_character_, TRUE ~ Annex1 ))
+  mutate(annex1.x = ifelse(is.na(annex1.x), annex1.y, annex1.x), 
+         annex1.y = ifelse(is.na(annex1.y), annex1.x, annex1.y)) %>%
+         rename(annex1 = annex1.x) %>% 
+         select(-annex1.y)
+
+# special case: "Faba vulgaris" not on the croplist? 
+# Faba bean is annex1 = Y
+# Update annex1 to "Y" if fullTaxa or acceptedName_TNRS contains "Faba vulgaris" 
+combined_allcrops <- combined_allcrops %>% 
+  mutate(annex1 = if_else( str_detect(fullTaxa, regex("Faba vulgaris", ignore_case = TRUE)) | 
+                             str_detect(acceptedName_TNRS, regex("Faba vulgaris", ignore_case = TRUE)), 
+                             "Y", annex1 ))
 
 
-## add special cases for Annex1 field
+## add special cases for annex1 field
 
-# if acceptedGenus_TNRS = Manihot, then Annex1= N 
-#     except when acceptedName = Manihot esculenta, then Annex1=Y
+# if acceptedGenus_TNRS = Manihot, then annex1= N 
+#     except when acceptedName = Manihot esculenta, then annex1=Y
 
-# if acceptedGenus_TNRS = Andropogon, then Annex1= N 
-#     except when acceptedName = Andropogon gayanus, then Annex1=Y
+# if acceptedGenus_TNRS = Andropogon, then annex1= N 
+#     except when acceptedName = Andropogon gayanus, then annex1=Y
 
-# if acceptedGenus_TNRS = Astragalus, then Annex1= N
-#     except when acceptedName_TNRS = Astragalus chinensis, Astragalus cicer, or Astragalus arenarius then Annex1=Y
+# if acceptedGenus_TNRS = Astragalus, then annex1= N
+#     except when acceptedName_TNRS = Astragalus chinensis, Astragalus cicer, or Astragalus arenarius then annex1=Y
 
-# if acceptedGenus= Zea, then Annex1=Y 
-#     except when acceptedName_TNRS = Zea perennis, Zea diploperennis, or Zea luxurians, then Annex1-N
+# if acceptedGenus= Zea, then annex1=Y 
+#     except when acceptedName_TNRS = Zea perennis, Zea diploperennis, or Zea luxurians, then annex1-N
 
-# if acceptedGenus= Atriplex, then Annex1=N 
-#     except when acceptedName_TNRS = Atriplex halimus, Atriplex nummularia then Annex1-Y
+# if acceptedGenus= Atriplex, then annex1=N 
+#     except when acceptedName_TNRS = Atriplex halimus, Atriplex nummularia then annex1-Y
 
-# if acceptedGenus= Lotus, then Annex1=N 
-#     except when acceptedName_TNRS =  Lotus corniculatus, Lotus subbiflorus, Lotus uliginosus then Annex1-Y
+# if acceptedGenus= Lotus, then annex1=N 
+#     except when acceptedName_TNRS =  Lotus corniculatus, Lotus subbiflorus, Lotus uliginosus then annex1-Y
 
-# if acceptedGenus= Medicago, then Annex1=N 
-#     except when acceptedName_TNRS = Medicago sativa, Medicago arborea, Medicago falcata, Medicago scutellata, Medicago rigidula, Medicago truncatula, Medicago sativa subsp. sativa, Medicago sativa ssp. sativa, Medicago sativa var. sativa then Annex1=Y
+# if acceptedGenus= Medicago, then annex1=N 
+#     except when acceptedName_TNRS = Medicago sativa, Medicago arborea, Medicago falcata, Medicago scutellata, Medicago rigidula, Medicago truncatula, Medicago sativa subsp. sativa, Medicago sativa ssp. sativa, Medicago sativa var. sativa then annex1=Y
 
-# if acceptedGenus= Melilotus, then Annex1=N 
-#     except when acceptedName_TNRS = Melilotus albus, Melilotus officinalis then Annex1=Y
+# if acceptedGenus= Melilotus, then annex1=N 
+#     except when acceptedName_TNRS = Melilotus albus, Melilotus officinalis then annex1=Y
 
-# if acceptedGenus= Trifolium, then Annex1=N 
+# if acceptedGenus= Trifolium, then annex1=N 
 #    except when acceptedName_TNRS = Trifolium repens, Trifolium pratense, Trifolium alexandrinum, Trifolium alpestre, 
 #          Trifolium ambiguum, Trifolium angustifolium, Trifolium arvense, 
 #          Trifolium agrocicerum, Trifolium hybridum, Trifolium incarnatum, 
 #          Trifolium pratense, Trifolium resupinatum, Trifolium rueppellianum, 
-#          Trifolium semipilosum, Trifolium subterraneum, Trifolium vesiculosum then Annex1=Y
+#          Trifolium semipilosum, Trifolium subterraneum, Trifolium vesiculosum then annex1=Y
 
 
 
-# Update the Annex1 column based on the special cases
-combined_allcrops <- combined_allcrops %>% 
-  mutate(Annex1 = case_when( 
-    acceptedGenus_TNRS == "Manihot" & acceptedName_TNRS != "Manihot esculenta" ~ "N", 
-    acceptedName_TNRS == "Manihot esculenta" ~ "Y", 
-    acceptedGenus_TNRS == "Astragalus" & !acceptedName_TNRS %in% c("Astragalus chinensis", "Astragalus cicer", "Astragalus arenarius") ~ "N", 
-    acceptedName_TNRS %in% c("Astragalus chinensis", "Astragalus cicer", "Astragalus arenarius") ~ "Y", 
-    acceptedGenus_TNRS == "Zea" & !acceptedName_TNRS %in% c("Zea perennis", "Zea diploperennis", "Zea luxurians") ~ "Y", 
-    acceptedName_TNRS %in% c("Zea perennis", "Zea diploperennis", "Zea luxurians") ~ "N", 
-    acceptedGenus_TNRS == "Atriplex" & !acceptedName_TNRS %in% c("Atriplex halimus", "Atriplex nummularia") ~ "N", 
-    acceptedName_TNRS %in% c("Atriplex halimus", "Atriplex nummularia") ~ "Y", 
-    acceptedGenus_TNRS == "Lotus" & !acceptedName_TNRS %in% c("Lotus corniculatus", "Lotus subbiflorus", "Lotus uliginosus") ~ "N", 
-    acceptedName_TNRS %in% c("Lotus corniculatus", "Lotus subbiflorus", "Lotus uliginosus") ~ "Y", 
-    acceptedGenus_TNRS == "Medicago" & !acceptedName_TNRS %in% c("Medicago sativa", "Medicago arborea", "Medicago falcata", 
-                                                                 "Medicago scutellata", "Medicago rigidula", "Medicago truncatula", 
-                                                                 "Medicago sativa subsp. sativa", "Medicago sativa ssp. sativa", 
-                                                                 "Medicago sativa var. sativa") ~ "N", 
-    acceptedName_TNRS %in% c("Medicago sativa", "Medicago arborea", "Medicago falcata", "Medicago scutellata", "Medicago rigidula", 
-                             "Medicago truncatula", "Medicago sativa subsp. sativa", "Medicago sativa ssp. sativa", 
-                             "Medicago sativa var. sativa") ~ "Y", 
-    acceptedGenus_TNRS == "Melilotus" & !acceptedName_TNRS %in% c("Melilotus albus", "Melilotus officinalis") ~ "N", 
-    acceptedName_TNRS %in% c("Melilotus albus", "Melilotus officinalis") ~ "Y", 
-    acceptedGenus_TNRS == "Trifolium" & !acceptedName_TNRS %in% c("Trifolium repens", "Trifolium pratense", "Trifolium alexandrinum", 
-                                                                  "Trifolium alpestre", "Trifolium ambiguum", "Trifolium angustifolium", 
-                                                                  "Trifolium arvense", "Trifolium agrocicerum", "Trifolium hybridum", 
-                                                                  "Trifolium incarnatum", "Trifolium pratense", "Trifolium resupinatum", 
-                                                                  "Trifolium rueppellianum", "Trifolium semipilosum", "Trifolium subterraneum", 
-                                                                  "Trifolium vesiculosum") ~ "N", 
-    acceptedName_TNRS %in% c("Trifolium repens", "Trifolium pratense", "Trifolium alexandrinum", "Trifolium alpestre", "Trifolium ambiguum", 
-                             "Trifolium angustifolium", "Trifolium arvense", "Trifolium agrocicerum", "Trifolium hybridum", "Trifolium incarnatum", 
-                             "Trifolium pratense", "Trifolium resupinatum", "Trifolium rueppellianum", "Trifolium semipilosum", "Trifolium subterraneum", 
-                             "Trifolium vesiculosum") ~ "Y", 
-    TRUE ~ Annex1 # Keep the existing value for all other cases 
-     ))
+### had issue with original code to assign special cases, not re-running sometimes
+## updated code below minimizes redundant operations and reduces lag in running
 
-view(combined_allcrops)
+combined_allcrops <- combined_allcrops %>%
+  mutate(annex1 = case_when(
+    acceptedGenus_TNRS == "Manihot" & acceptedName_TNRS == "Manihot esculenta" ~ "Y",
+    acceptedGenus_TNRS == "Manihot" & acceptedName_TNRS != "Manihot esculenta" ~ "N",
+    
+    acceptedGenus_TNRS == "Astragalus" & acceptedName_TNRS %in% c("Astragalus chinensis", "Astragalus cicer", "Astragalus arenarius") ~ "Y",
+    acceptedGenus_TNRS == "Astragalus" ~ "N",
+    
+    acceptedGenus_TNRS == "Zea" & acceptedName_TNRS %in% c("Zea perennis", "Zea diploperennis", "Zea luxurians") ~ "N",
+    acceptedGenus_TNRS == "Zea" ~ "Y",
+    
+    acceptedGenus_TNRS == "Atriplex" & acceptedName_TNRS %in% c("Atriplex halimus", "Atriplex nummularia") ~ "Y",
+    acceptedGenus_TNRS == "Atriplex" ~ "N",
+    
+    acceptedGenus_TNRS == "Lotus" & acceptedName_TNRS %in% c("Lotus corniculatus", "Lotus subbiflorus", "Lotus uliginosus") ~ "Y",
+    acceptedGenus_TNRS == "Lotus" ~ "N",
+    
+    acceptedGenus_TNRS == "Medicago" & acceptedName_TNRS %in% c("Medicago sativa", "Medicago arborea", "Medicago falcata", "Medicago scutellata", "Medicago rigidula", "Medicago truncatula", 
+                                                                "Medicago sativa subsp. sativa", "Medicago sativa ssp. sativa", 
+                                                                "Medicago sativa var. sativa") ~ "Y",
+    acceptedGenus_TNRS == "Medicago" ~ "N",
+    
+    acceptedGenus_TNRS == "Melilotus" & acceptedName_TNRS %in% c("Melilotus albus", "Melilotus officinalis") ~ "Y",
+    acceptedGenus_TNRS == "Melilotus" ~ "N",
+    
+    acceptedGenus_TNRS == "Trifolium" & acceptedName_TNRS %in% c("Trifolium repens", "Trifolium pratense", "Trifolium alexandrinum", "Trifolium alpestre", "Trifolium ambiguum", 
+                                                                 "Trifolium angustifolium", "Trifolium arvense", "Trifolium agrocicerum", "Trifolium hybridum", "Trifolium incarnatum", 
+                                                                 "Trifolium pratense", "Trifolium resupinatum", "Trifolium rueppellianum", "Trifolium semipilosum", "Trifolium subterraneum", 
+                                                                 "Trifolium vesiculosum") ~ "Y",
+    acceptedGenus_TNRS == "Trifolium" ~ "N",
+    
+    TRUE ~ annex1 # Keep the existing value for all other cases
+  ))
+
+View(combined_allcrops)
+
+
+# check to see if some of the special cases were assigned properly
+library(dplyr) 
+library(stringr) 
+# Filter rows that contain "Astragalus chinensis" 
+astragalus_chinensis_rows <- combined_allcrops %>% 
+  filter_all(any_vars(str_detect(., regex("Astragalus chinensis", ignore_case = TRUE))))
+manihot_rows <- combined_allcrops %>% 
+  filter_all(any_vars(str_detect(., regex("Manihot", ignore_case = TRUE))))
+View(manihot_rows)
+
+
+# Check all rows have annex1 filled out (no Nas)
+na_count <- combined_allcrops %>% summarise(na_count = sum(is.na(annex1)))
+na_count
+# View the rows with NA values, should be 0 rows
+na_rows <- combined_allcrops %>% filter(is.na(annex1))
+view(na_rows)
 
 
 
-
-
+### Add primaryRegions field and isInPrimaryRegions field
 
 ### Read in the plants that feed the world regions guide file
-
-# library(readxl)
+library(readxl)
 PlantsThatFeedTheWorld_regions <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/CropRegions_PlantsThatFeedtheWorld/PlantsThatFeedTheWorld_Regions.xlsx")
 View(PlantsThatFeedTheWorld_regions)
 
 # rename column 
 PlantsThatFeedTheWorld_regions <- PlantsThatFeedTheWorld_regions %>% 
-  rename("RegionsofDiversity_name" = "PlantsThatFeedTheWorld_name")
+  rename("RegionsofDiversity_name" = "PlantsThatFeedTheWorld_name", "primaryRegions"= "Region")
 
 # read in the 
 library(readxl)
 croplist <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_croplist.xlsx")
 
-# rename column 
+# rename columns
 croplist <- croplist %>% 
-  rename("PlantsThatFeedTheWorld_name" = "PlantsthatFeedtheWorld_name")
-
-# only contains the crops in our dataset
-## i dont think this works
-# PlantsThatFeedTheWorld_regions <- PlantsThatFeedTheWorld_regions %>% 
-#  inner_join(croplist %>% select(PlantsThatFeedTheWorld_name), by = "PlantsThatFeedTheWorld_name")
-
-### join the Plants that Feed the World regions to the croplist by PlantsThatFeedTheWorld_name" 
-# croplist3 <- croplist %>% left_join(PlantsThatFeedTheWorld_regions, by = "PlantsThatFeedTheWorld_name")
-
+  rename("PlantsThatFeedTheWorld_name" = "PlantsthatFeedtheWorld_name", 
+         "cropStrategy" = "CropStrategy", "genus" = "Genera_primary")
 
 # Deduplicate the PlantsThatFeedTheWorld_regions dataset 
 unique_PTFW_regions <- PlantsThatFeedTheWorld_regions %>% distinct(RegionsofDiversity_name, .keep_all = TRUE)
@@ -1114,30 +1270,185 @@ unique_PTFW_regions <- PlantsThatFeedTheWorld_regions %>% distinct(RegionsofDive
 croplist <- croplist %>% left_join(unique_PTFW_regions, by = "RegionsofDiversity_name")
 
 
-# Combine data from Regionsofdiversity_new with existing data in Region column 
-croplist <- croplist %>% mutate(Region = ifelse(is.na(Region) | Region == "", 
+# Assign special cases, where CK re-assigned primary regions for some crops 
+# (column: Regionsofdiversity_new), add to Region column in croplist 
+croplist <- croplist %>% mutate(primaryRegions = ifelse(is.na(primaryRegions) | primaryRegions == "", 
                                                 Regionsofdiversity_new, 
-                                                paste(Region, Regionsofdiversity_new, 
-                                                sep = ", ")))
+                                                paste(primaryRegions, Regionsofdiversity_new, 
+                                                sep = ", "))) %>% 
+                                                # Remove all instances of ", NA" from the Region field 
+                                                mutate(primaryRegions = str_replace_all(primaryRegions, ", NA", ""))
 
 
 
-##  join Regions column in croplist guide file to the combined_allcrops dataset, join by crop strategy 
-## 
+
+
+
+## add primaryRegions column from in croplist guide file to the combined_allcrops dataset, join by crop strategy 
+## DONT RUN FOR FORAGES ..... and 
+# ONLY include CWR, landraces and other 
+# sampStat = 100s (wild + other wild types)
+# sampStat = 300 (landrace)
+# sampStat = 999 (other)
+# sampStat = 200 (weedy)      ? include? <<<<<<<<<<< SG ask abt this
+
+## exclude:
+## sampStat = 400s (Breeding research material =  other breeding materials)
+## sampStat = 500 (advanced or improved cultivar)
+## sampStat =  600 (GMO)
+
+# prep primaryRegions column to join in croplist
+# EXCLUDE FORAGES
+## subset only the relevant column(s) to join:
+croplist_primaryRegions <- subset(croplist, select = c(genus, primaryRegions, cropStrategy)) %>%
+          filter(cropStrategy != "Tropical and subtropical forages")%>% 
+          select(-cropStrategy)
+
+# join primaryRegions column in croplist_primaryRegions to combined_allcrops,
+# join by genera
+combined_allcrops <- combined_allcrops %>% left_join(croplist_primaryRegions, by = "genus")
 
 
 
 
-## make a new column, isinPrimaryRegion
+## RE_RUN WITH CLEANED GENUS with cleaned genus to fill in all accessions
+# rename the primary genus column in croplist to "acceptedGenus_TNRS"
+# duplicate steps above for acceptedGenus_TNRS
+croplist <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_croplist.xlsx")
+croplist <- croplist %>% rename("PlantsThatFeedTheWorld_name" = "PlantsthatFeedtheWorld_name", 
+                              "cropStrategy" = "CropStrategy", "acceptedGenus_TNRS" = "Genera_primary")
+croplist <- croplist %>% left_join(unique_PTFW_regions, by = "RegionsofDiversity_name")
+croplist <- croplist %>% mutate(primaryRegions = ifelse(is.na(primaryRegions) | primaryRegions == "", 
+                                                       Regionsofdiversity_new, 
+                                                       paste(primaryRegions, Regionsofdiversity_new, 
+                                                             sep = ", "))) %>% 
+                                                            # Remove all instances of ", NA" from the Region field 
+                                                        mutate(primaryRegions = str_replace_all(primaryRegions, ", NA", ""))
+
+# subset relevant columns to join
+croplist_primaryRegions <- subset(croplist, select = c(acceptedGenus_TNRS, primaryRegions, cropStrategy)) %>%
+  filter(cropStrategy != "Tropical and subtropical forages")%>% 
+  select(-cropStrategy)
+
+# join by cleaned genus 
+combined_allcrops <- combined_allcrops %>% left_join(croplist_primaryRegions, by = "acceptedGenus_TNRS")
+
+
+
+
+# Fill NAs in primaryRegions.x with primaryRegions.y and vice versa 
+combined_allcrops <- combined_allcrops %>% 
+  mutate(primaryRegions.x = ifelse(is.na(primaryRegions.x), primaryRegions.y, primaryRegions.x), 
+         primaryRegions.y = ifelse(is.na(primaryRegions.y), primaryRegions.x, primaryRegions.y)) %>%
+  rename(primaryRegions = primaryRegions.x) %>% 
+  select(-primaryRegions.y)
+
+
+# Re-assign primaryRegions to NA if sampStat is 400s, 500, or 600 
+combined_allcrops <- combined_allcrops %>% 
+  mutate(primaryRegions = ifelse(sampStat %in% c(400:499, 500, 600), NA, primaryRegions))
+
+
+# special case, assign "Faba vulgaris" by hand
+# Update primaryRegions if fullTaxa contains "Faba vulgaris" and sampStat is not in 400s, 500, or 600 
+combined_allcrops <- combined_allcrops %>% 
+  mutate(primaryRegions = ifelse( str_detect(fullTaxa, "Faba vulgaris") 
+                                 & !sampStat %in% c(400:499, 500, 600), "Asia_West", primaryRegions ))
+
+View(combined_allcrops)
+
+
+
+# Check all rows (excluding forages and sampStat gen modified) have primaryRegions assigned
+na_count <- combined_allcrops %>% 
+  filter(cropStrategy != "Tropical and subtropical forages" & !(sampStat %in% c(400:499, 500, 600))) %>% 
+  summarise(na_count = sum(is.na(primaryRegions)))
+# na count = 0
+na_count
+
+
+
+
+
+
+
+
+## Make a new column, isInPrimaryRegions
+## is the country of origin of that crop accession, in the primary region of diversity for that crop?
 ## only include data with crops and CWRS (do not include info from landraces and Other)
 ## calculate based on country of origin field and primary region field (from guidefile)
                                       
 ## guidefile for what countries are in what regions 
+library(readxl)
+countries_in_regions <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/CropRegions_PlantsThatFeedtheWorld/countries_in_regions.xlsx")
 
 
-View(croplist)
+# subset out columns we need, country codes field and primary regions field 
+countries_in_regions <- subset(countries_in_regions, select = c(Country_code, PlantsThatFeedTheWorld_Region_new)) %>% 
+  rename("primaryRegions" = "PlantsThatFeedTheWorld_Region_new", 
+         "origCty" = "Country_code")
 
-View(PlantsThatFeedTheWorld_regions)
+
+## try this
+# processing was too laggy so created an alternative way to compute this 
+
+library("dplyr") 
+library("stringr") 
+
+# Create a flag in countries_in_regions 
+countries_in_regions <- countries_in_regions %>% mutate(match_flag = "Y") 
+
+# Perform a left join and then use vectorized string matching 
+# Update the flag based on partial matches 
+# Leave isInPrimaryRegion as NA if no origCty
+combined_allcrops <- combined_allcrops %>% 
+  left_join(countries_in_regions, by = "origCty") %>% 
+  mutate(isInPrimaryRegions = ifelse( str_detect(primaryRegions.x, paste0("\\b", primaryRegions.y, "\\b")), "Y", "N")) %>% 
+  mutate(isInPrimaryRegions = ifelse( cropStrategy == "Tropical and subtropical forages", NA, isInPrimaryRegions)) %>% 
+  mutate(isInPrimaryRegions = ifelse( sampStat %in% c(400:499, 500, 600), NA, isInPrimaryRegions)) %>% 
+  mutate(isInPrimaryRegions = ifelse( is.na(origCty), NA, isInPrimaryRegions)) %>% 
+  select(-match_flag) # remove temp match column
+
+
+# rename primaryRegions.x to primaryRegions (primary region of diversity)
+# rename primaryRegions.y to regionOforigCty (region of country of origin)
+#could be useful to keep BOTH fields for visual checks on correct isInPrimaryRegion assignment
+combined_allcrops <- combined_allcrops %>% 
+       rename("primaryRegions" = "primaryRegions.x", 
+              "regionOforigCty" = "primaryRegions.y")
+
+
+
+
+
+
+
+
+
+# Check all rows (excluding forages and sampStat gen modified) have primaryRegions assigned
+na_count <- combined_allcrops %>% 
+  filter(cropStrategy != "Tropical and subtropical forages" & !(sampStat %in% c(400:499, 500, 600))) %>% 
+  summarise(na_count = sum(is.na(primaryRegions)))
+# na count = 0
+na_count
+
+
+
+
+
+
+
+
+## dont forget to resave combined_allcrops data file at end
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1150,9 +1461,45 @@ View(PlantsThatFeedTheWorld_regions)
 # working notes, delete 
 # find the country errors 
 
-# Identify rows that have the record "Z06" in any column 
-rows_with_ZAR <- combined_allcrops %>% 
-  filter(apply(., 1, function(row) any(row == "ZAR", na.rm = TRUE)))
-View(rows_with_ZAR)
+# Identify rows that have 400s, 500, or 600 in the sampStat column 
+rows_with <- combined_allcrops3 %>% filter(cropStrategy != "Tropical and subtropical forages") %>%
+  filter(apply(., 1, function(row) any(row == "Z07", na.rm = TRUE)))
+View(rows_with)
+
+
+# Identify rows that have 400s, 500, or 600 in the sampStat column 
+rows_with <- combined_allcrops3 %>% 
+  filter(cropStrategy != "Tropical and subtropical forages") %>% 
+  filter(sampStat %in% c(400:499, 500, 600))
+
+View(rows_with)
+# Check all rows (excluding forages) have isInprimaryRegions assigned
+na_count <- combined_allcrops3 %>% filter(cropStrategy != "Tropical and subtropical forages") %>%
+  summarise(na_count = sum(is.na(isInPrimaryRegions)))
+
+# View rows (excluding foragaes) with NA values
+na_rows <- combined_allcrops3 %>% filter(cropStrategy != "Tropical and subtropical forages") %>%
+  filter(is.na(isInPrimaryRegions))
+view(na_rows)
+
+
+
+
+
+# Identify rows with sampStat in the 400s, 500, or 600 
+rows_with <- combined_allcrops3 %>% 
+  filter(sampStat %in% c(400:499, 500, 600)) 
+
+
+# Find and view the rows with CWR = "Y" 
+rows_with_grasspea <- combined_allcrops %>% filter(fullTaxa == "Lathyrus sativus") 
+
+# View the resulting rows 
+View(rows_with_grasspea)
+
+
+
+
+
 
 
