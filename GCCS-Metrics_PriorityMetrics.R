@@ -39,12 +39,13 @@ View(combined_allcrops)
 combined_allcrops_sum <- combined_allcrops %>%
   group_by(cropStrategy) %>%
   summarise(cropcount = n())
+View(combined_allcrops_sum)
 
 # filter by crop and data source 
 combined_allcrops_sum2 <- combined_allcrops %>%
   group_by(data_source, cropStrategy) %>%
   summarise(count = n())
-
+View(combined_allcrops_sum2)
 
 
 
@@ -53,7 +54,7 @@ combined_allcrops_sum2 <- combined_allcrops %>%
 uniqueInstitionsCount <- combined_allcrops %>% 
   group_by(cropStrategy) %>% 
   summarise(unique_instCount = n_distinct(instCode))
-
+View(uniqueInstitionsCount)
 
 
 
@@ -64,19 +65,23 @@ uniqueInstitionsCount <- combined_allcrops %>%
 # sampStat = 100 
 # need integer and %
 
-## metric 1, count # of cwrs by code
+
+## Metric 1, count # of cwrs by code (all values between 100-199)
+
+## what abt calculation by assigning of CWR? based on isCWR and croplist?
 
 # count- integer
 cwrCount <- combined_allcrops %>% 
   group_by(cropStrategy) %>% 
-  summarise(count_100sampStat = sum(sampStat == 100, na.rm = TRUE))
+  summarise(count_100sampStat = sum(sampStat >= 100 & sampStat < 200, na.rm = TRUE)) 
+View(cwrCount)
 
-# Count as a % of the whole 
+# count as a % of the whole
 cwrPerc <- combined_allcrops %>% 
   group_by(cropStrategy) %>% 
-  summarise( count_100sampStat = sum(sampStat == 100, na.rm = TRUE), cwr_total_records = n() ) %>% 
-  mutate( percent_100sampStat = round((count_100sampStat / cwr_total_records) * 100, 2) )
-
+  summarise(count_100sampStat = sum(sampStat >= 100 & sampStat < 200, na.rm = TRUE), cwr_total_records = n()) %>%  
+  mutate(percent_100sampStat = round((count_100sampStat / cwr_total_records) * 100, 2))
+View(cwrPerc)
 
 ## metric 2, count/ list unique taxon 
 unique_taxa <- combined_allcrops %>% 
@@ -85,6 +90,7 @@ unique_taxa <- combined_allcrops %>%
   distinct() %>% # Get unique rows 
   group_by(cropStrategy) %>%
   summarise(unique_taxa = list(unique(acceptedName_TNRS)))
+View(unique_taxa)
 
 # Create the list of unique taxa and count them 
 unique_taxa <- combined_allcrops %>% 
@@ -93,6 +99,7 @@ unique_taxa <- combined_allcrops %>%
   distinct() %>% # Get unique rows 
   group_by(cropStrategy) %>% 
   summarise( unique_taxa = list(unique(acceptedName_TNRS)), unique_taxa_count = n_distinct(acceptedName_TNRS) )
+View(unique_taxa)
 
 # example list of taxa names 
 desired_crop_strategy <- "Aroids" 
@@ -101,6 +108,27 @@ unique_taxa_for_strategy <- unique_taxa %>% filter(cropStrategy == desired_crop_
 taxa_list <- unique_taxa_for_strategy$unique_taxa[[1]] 
 # View the list of unique taxa 
 print(taxa_list)
+
+
+##### METRIC: Number of accessions of Weedy ############################################
+# filter by crop 
+# sampStat = 200 
+# need integer and %
+
+# count- integer
+# filter by crop
+weedyCount <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(count_200sampStat = sum(sampStat == 200, na.rm = TRUE))
+View(weedyCount)
+
+# Count as a % of the whole 
+weedyPerc <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(count_200sampStat = sum(sampStat == 200, na.rm = TRUE), weedy_total_records = n() ) %>% 
+  mutate( percent_200sampStat = round((count_200sampStat / weedy_total_records) * 100, 2) )
+View(weedyPerc)
+
 
 
 
@@ -114,12 +142,35 @@ print(taxa_list)
 landraceCount <- combined_allcrops %>% 
   group_by(cropStrategy) %>% 
   summarise(count_300sampStat = sum(sampStat == 300, na.rm = TRUE))
+View(landraceCount)
 
 # Count as a % of the whole 
 landracePerc <- combined_allcrops %>% 
   group_by(cropStrategy) %>% 
   summarise( count_300sampStat = sum(sampStat == 300, na.rm = TRUE), landrace_total_records = n() ) %>% 
   mutate( percent_300sampStat = round((count_300sampStat / landrace_total_records) * 100, 2) )
+View(landracePerc)
+
+
+##### METRIC: Number of accessions of Breeding Material ############################################
+# filter by crop 
+# sampStat = 400s (all values in 400s)
+# need integer and %
+
+## count # of breeding material by code (all values between 400-499)
+
+# count- integer
+breedingmatCount <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(count_400sampStat = sum(sampStat >= 400 & sampStat < 500, na.rm = TRUE)) 
+View(breedingmatCount)
+
+# count as a % of the whole
+breedingmatPerc <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(count_400sampStat = sum(sampStat >= 400 & sampStat < 500, na.rm = TRUE), breedingmat_total_records = n()) %>%  
+  mutate(percent_400sampStat = round((count_400sampStat / breedingmat_total_records) * 100, 2))
+View(breedingmatPerc)
 
 
 
@@ -133,13 +184,14 @@ landracePerc <- combined_allcrops %>%
 improvedvarCount <- combined_allcrops %>% 
   group_by(cropStrategy) %>% 
   summarise(count_500sampStat = sum(sampStat == 500, na.rm = TRUE))
+View(improvedvarCount)
 
 ### calculate % 
 improvedvarPerc <- combined_allcrops %>% 
   group_by(cropStrategy) %>% 
   summarise( count_500sampStat = sum(sampStat == 500, na.rm = TRUE), improvedvar_total_records = n() ) %>% 
   mutate( percent_500sampStat = round((count_500sampStat / improvedvar_total_records) * 100, 2) )
-
+View(improvedvarPerc)
 
 
 
@@ -153,36 +205,69 @@ improvedvarPerc <- combined_allcrops %>%
 othervarCount <- combined_allcrops %>% 
   group_by(cropStrategy) %>% 
   summarise(count_999sampStat = sum(sampStat == 999, na.rm = TRUE))
+View(othervarCount)
 
 # calculate %
 othervarPerc <- combined_allcrops %>% 
   group_by(cropStrategy) %>% 
   summarise( count_999sampStat = sum(sampStat == 500, na.rm = TRUE), othervar_total_records = n() ) %>% 
   mutate( percent_999sampStat = round((count_999sampStat / othervar_total_records) * 100, 2) )
+View(othervarPerc)
 
+
+##### METRIC: Number of accessions not marked with a storage type ############################################
+# filter by crop 
+# sampStat = NA
+# need integer and %
+
+# count- integer
+# filter by crop
+# Count the number of accessions with sampStat == NA 
+nosampStatCount <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(count_NA_sampStat = sum(is.na(sampStat)))
+View(nosampStatCount)
+
+# Count as a % of the whole 
+nosampStatPerc <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(count_NA_sampStat = sum(is.na(sampStat)), nosampStat_total_records = n()) %>% 
+  mutate(percent_NA_sampStat = round((count_NA_sampStat / nosampStat_total_records) * 100, 2))
+View(nosampStatPerc)
 
 
 
 ##### METRIC: Number of countries where germplasm has been collected ########################
 
-# data used: CWR , landraces, and other 
-# (removed improved varieties from dataset used)
-# sampStat field keep 100, 300, 999
-combined_allcrops_impmatrmv <- subset(combined_allcrops, sampStat == "100" | sampStat == "300" | sampStat == "999")
+# calculation has excluded sampStat rows of 400s, 500, 600 (improved varieties, etc)
 
 # count- integer
 # filter by crop
-countryCount <- combined_allcrops_impmatrmv %>% 
-  group_by(cropStrategy) %>% 
-  summarise(unique_countryCount = n_distinct(origCty))
+countryCount <- combined_allcrops %>% 
+  filter(!(sampStat %in% c(400:499, 500, 600))) %>% 
+  group_by(cropStrategy) %>% summarise(unique_countryCount = n_distinct(origCty))
+View(countryCount)
+
 
 
 ### METRIC:  Number of accessions from primary region(s) of diversity
-# use guide file
+# filter by crop 
+# isInPrimaryRegions = Y
+# need integer and %
+
+# count- integer
+isInPrimaryRegionCount <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(isInPrimaryRegion_Y_count = sum(isInPrimaryRegions == "Y", na.rm = TRUE))
+View(isInPrimaryRegionCount)
 
 
-
-
+# calculate %
+isInPrimaryRegionPerc <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(isInPrimaryRegion_Y_count = sum(isInPrimaryRegions == "Y", na.rm = TRUE), primaryRegions_total_records = n() ) %>% 
+  mutate( isInPrimaryRegion_Perc = round((isInPrimaryRegion_Y_count / primaryRegions_total_records) * 100, 2) )
+View(isInPrimaryRegionPerc)
 
 
 
@@ -205,7 +290,7 @@ internationalInst_count <- combined_allcrops %>%
 # count- integer 
 notinternationalInst_count <- combined_allcrops %>% 
   group_by(cropStrategy) %>% 
-  summarise(notinternationalInst_count = sum(mlsStat == "N" | is.na(mlsStat)))
+  summarise(notinternationalInst_count = sum(internationalStatus == "N" | is.na(internationalStatus)))
 
 # number of institutions categorized as international 
 # calculate %
@@ -269,6 +354,28 @@ mlsY_internationalInst_perc <- combined_allcrops %>%
   summarise( internationalInst_count = sum(internationalStatus == "Y", na.rm = TRUE), mlsStat_count = sum(mlsStat == "Y", na.rm = TRUE), 
              mlsY_internationalInst_count = sum(mlsStat == "Y" & internationalStatus == "Y", na.rm = TRUE), 
              percentage_mlsY_internationalInst = (mlsY_internationalInst_count / mlsStat_count) * 100 )
+
+
+
+
+
+### METRIC:  Number of accessions held in Annex I
+# Need integer and % of total accessions held in Annex I
+
+############################# >>>>> CHECK TO MAKE SURE THIS WORKS!!!
+
+# Count of accessions in Annex I 
+annex1_count <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(count_IncludedAnnex1 = sum(Annex1 == "Y", na.rm = TRUE))
+
+# calculate % of accessions in Annex I
+annex1_Perc <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(annex1_count = sum(Annex1 == "Y", na.rm = TRUE), annex1_total_records = n()) %>% 
+  mutate( annex1_Perc = round((Annex1_count / annex1_total_records) * 100, 2) )
+
+
 
 
 
@@ -346,6 +453,18 @@ otherstorage_Perc <- combined_allcrops %>%
   group_by(cropStrategy) %>% 
   summarise(other_storage_count = sum(storage == "99", na.rm = TRUE), other_storage_total_records = n()) %>% 
   mutate( other_storage_Perc = round((other_storage_count / other_storage_total_records) * 100, 2) )
+
+## number of accessions with no data in the storage field 
+# Count the number of accessions with storage == NA 
+nostorage_count <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(nostorage_count = sum(is.na(storage))) 
+
+# Count as a % of the whole 
+nostorage_Perc <- combined_allcrops %>% 
+  group_by(cropStrategy) %>% 
+  summarise(nostorage_count = sum(is.na(storage)), nostorage_total_records = n()) %>% 
+  mutate(nostorage_Perc = round((nostorage_count / nostorage_total_records) * 100, 2))
 
 
 
