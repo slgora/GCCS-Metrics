@@ -1443,8 +1443,40 @@ na_count
 
 
 
+############# Prep doi GLIS data ############################################
+## list of number of DOIs by genus
+
+# GLIS data
+library(readxl)
+GLIS_DOIs_by_genus <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/PlantTreatyGLIS_data/GLIS_DOIs/GLIS_ DOIs_by_genus.xlsx")
+View(GLIS_DOIs_by_genus)
+
+# Fill out cropStrategy field
+# assign by original genus 
+# join Genera_primary in croplist with genus in combined_allcrops
+croplist <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_croplist.xlsx")
+
+## subset only the relevant column to join:
+croplist_strategy <- subset(croplist, select = c(Genera_primary, CropStrategy))
+
+#rename relevant columns 
+croplist_strategy <- croplist_strategy %>% 
+  rename( genus = Genera_primary, cropStrategy = CropStrategy) %>%
+  drop_na()
+
+# join cropStrategy to GLIS_DOIs_by_genus
+GLIS_DOIs <- GLIS_DOIs_by_genus %>% left_join(croplist_strategy, by = "genus")
 
 
+# arrange by alphabetical order of cropStrategy and columns with cropStategy as column 1
+library("dplyr") 
+GLIS_DOIs <- GLIS_DOIs %>% 
+  arrange(cropStrategy) %>% 
+  select(cropStrategy, genus, dois)
+
+#save to file
+library(writexl)
+write_xlsx(GLIS_DOIs, path = "C:/Users/sgora/Desktop/GCCS-Metrics/Data/PlantTreatyGLIS_data/GLIS_DOIs/GLIS_ DOIs.xlsx")
 
 
 
