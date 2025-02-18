@@ -1,61 +1,41 @@
 ### Project: Global Crop Conservation Strategies Metrics ###
 ### Priority Metrics Calculations 
-### Degree of Duplication
+### Estimates of Safety Duplication
 ### GCCS-Metrics_Degree_of_Duplication_PGscript.R
-### by Sarah Gora
+### by Sarah Gora and Peter Giovannini
 ### Date transformed: 2024_12_19
+### debugged on 18-Feb-2025
 
-
-### Peter Giovannini Python script transformed to R script using Git copilot
+### Peter Giovannini Python script about Safety Duplication translated into R script 
 
 # intall/load packages
 library(dplyr)
 library(tidyr)
+library(tidyverse)  ### added by Peter G.
 
-# load starting Genesys dataset and re-name "df2"
-Genesys_allcrops_unformatted <- read_csv("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GenesysPGR_data/All_Crops/Genesys_allcrops_unformatted.csv")
-df2 <- Genesys_allcrops_unformatted
-
-# Prepare dataset 
-df2$INSTCODE <- as.character(df2$INSTCODE)  # df2 is the starting Genesys dataset
-df2$ACCENUMB <- as.character(df2$ACCENUMB)
-df2$ID <- paste(df2$INSTCODE, df2$ACCENUMB, sep = "")  # Create unique ID for each accession using accession number and institute code
-df3 <- df2 %>% distinct(ID, .keep_all = TRUE) # Drop potential duplicates
-df3$holding_country <- substr(df3$INSTCODE, 1, 3) # Create a column for holding country ISO code using first three letters of institute code
-
-# Use value in DUPLSITE to create a list with each institute code as item
-df3$DUPLSITE_LIST <- strsplit(replace_na(df3$DUPLSITE, ""), ";")
-
+# define functions before anything else
 duplicates_out_country <- function(site, pat) {
-  # Function to check for duplicates out of the country
   res <- 0
   for (i in site) {
-    if ("NOR051" %in% i) {
-      next
-    } else if (pat %in% i) {
-      next
-    } else if (i == "" || i == "nan") {
+    if (i %in% c('NOR051', '', 'nan') || substr(i, 1, 3) == pat) {
       next
     } else {
-      res <- 1
-      return(res)
+      return(1)
     }
   }
   return(res)
 }
 
 duplicates_in_country <- function(site, pat, holder) {
-  # Function to check for duplicates in the country
   res <- 0
   for (i in site) {
-    if ("NOR051" %in% i) {
+    if (grepl('NOR051', i)) {
       next
     } else if (i == holder) {
       next
-    } else if (pat %in% i) {
-      res <- 1
-      return(res)
-    } else if (i == "" || i == "nan") {
+    } else if (grepl(pat, i)) {
+      return(1)
+    } else if (i %in% c('', 'nan')) {
       next
     } else {
       res <- 0
@@ -65,13 +45,11 @@ duplicates_in_country <- function(site, pat, holder) {
 }
 
 duplicates_SDGV <- function(site) {
-  # Function to check if there are duplicates at NOR051 (SGSV)
   res <- 0
   for (i in site) {
-    if ("NOR051" %in% i) {
-      res <- 1
-      return(res)
-    } else if (i == "" || i == "nan") {
+    if (grepl('NOR051', i)) {
+      return(1)   
+    } else if (i %in% c('', 'nan')) {
       next
     } else {
       res <- 0
@@ -81,252 +59,129 @@ duplicates_SDGV <- function(site) {
 }
 
 duplicates_only_in_country <- function(site, pat, holder) {
-  # Function to check for duplicates only in the country
   res <- 0
   for (i in site) {
-    if ("NOR051" %in% i) {
-      res <- 0
-      return(res)
+    if (grepl('NOR051', i)) {
+      return(0) 
     } else if (i == holder) {
       next
-    } else if (pat %in% i) {
-      res <- 1
-    } else if (i == "" || i == "nan") {
+    } else if (grepl(pat, i)) {
+      res <- 1    
+    } else if (i %in% c('', 'nan')) {
       next
     } else {
-      res <- 0
-      return(res)
+      return(0)
     }
   }
   return(res)
 }
 
-estimated_sd_genesys <- function(df, grouping_by = 'GENUS') {
-  # Function to estimate safety duplications in Genesys dataset
-  sd <- df %>% filter(DUPLSITE != "NOR051") %>% group_by_at(grouping_by) %>% summarise(SD = n())
-  sgsv <- df %>% filter(grepl("NOR051", DUPLSITE, na.rm = TRUE)) %>% group_by_at(grouping_by) %>% summarise(SGSV = n())
-  grouped <- df %>% group_by_at(grouping_by) %>% summarise(`Genesys all` = n())
-  result <- full_join(sd, sgsv, by = grouping_by) %>% full_join(grouped, by = grouping_by) %>% replace_na(list(SD = 0, SGSV = 0))
-  return(result)
-}
 
-safety_duplication_complete <- function(df, groupby = 'GENUS') {
-  # Function to perform safety duplication analysis
+safety_duplication_complete <- function(df, groupby = 'genus') {
   df <- df %>%
-    mutate(SD_out_country = mapply(duplicates_out_country, DUPLSITE_LIST, holding_country),
-           SD_in_country = mapply(duplicates_in_country, DUPLSITE_LIST, holding_country, INSTCODE),
-           SD_SDGV = mapply(duplicates_SDGV, DUPLSITE_LIST),
-           SD_only_in_country = mapply(duplicates_only_in_country, DUPLSITE_LIST, holding_country, INSTCODE)) %>%
-    mutate(all_sd = SD_in_country + SD_SDGV + SD_out_country,
-           no_SD = all_sd < 1)
+    mutate(
+      SD_out_country = mapply(duplicates_out_country, duplSite_LIST, holding_country),
+      SD_in_country  = mapply(duplicates_in_country,  duplSite_LIST, holding_country, instCode),
+      SD_SDGV = mapply(duplicates_SDGV, duplSite_LIST),
+      SD_only_in_country = mapply(duplicates_only_in_country, duplSite_LIST, holding_country, instCode),
+      all_sd = SD_in_country + SD_SDGV + SD_out_country,
+      no_SD = all_sd < 1
+    )
   
-  grouped <- df %>% group_by_at(groupby)
-  
-  SD_out <- grouped %>% summarise(SD_out_country = sum(SD_out_country))
-  SD_in <- grouped %>% summarise(SD_in_country = sum(SD_in_country))
-  SD_only_in <- grouped %>% summarise(SD_only_in_country = sum(SD_only_in_country))
-  no_sd <- grouped %>% summarise(no_SD = sum(no_SD))
-  SD_SGSV <- grouped %>% summarise(SD_SDGV = sum(SD_SDGV))
-  acc <- grouped %>% summarise(accessions_total = n())
-  
-  results <- SD_in %>%
-    full_join(SD_out, by = groupby) %>%
-    full_join(SD_only_in, by = groupby) %>%
-    full_join(SD_SGSV, by = groupby) %>%
-    full_join(no_sd, by = groupby) %>%
-    full_join(acc, by = groupby) %>%
+  grouped <- df %>% group_by(!!sym(groupby))
+  results <- grouped %>%
+    summarise(
+      SD_in_country = sum(SD_in_country),
+      SD_out_country = sum(SD_out_country),
+      SD_only_in_country = sum(SD_only_in_country),
+      SD_SDGV = sum(SD_SDGV),
+      no_SD = sum(no_SD),
+      accessions_total = n()
+    ) %>%
     arrange(desc(accessions_total)) %>%
-    mutate(SD_in_country_per = 100 * (SD_in_country / accessions_total),
-           SD_only_in_country_per = 100 * (SD_only_in_country / accessions_total),
-           SD_out_country_per = 100 * (SD_out_country / accessions_total),
-           SD_SDGV_per = 100 * (SD_SDGV / accessions_total),
-           no_SD_per = 100 * (no_SD / accessions_total)) %>%
-    select(SD_in_country, SD_out_country, SD_only_in_country, SD_SDGV, no_SD, accessions_total,
-           SD_in_country_per, SD_only_in_country_per, SD_out_country_per, SD_SDGV_per, no_SD_per)
-  
+    mutate(
+      SD_in_country_per = 100 * (SD_in_country / accessions_total),
+      SD_only_in_country_per = 100 * (SD_only_in_country / accessions_total),
+      SD_out_country_per = 100 * (SD_out_country / accessions_total),
+      SD_SDGV_per = 100 * (SD_SDGV / accessions_total),
+      no_SD_per = 100 * (no_SD / accessions_total)
+    ) %>%
+    rename(
+      `SD_in_country` = SD_in_country,
+      `SD_out_country` = SD_out_country,
+      `SD_only_in_country` = SD_only_in_country,
+      `SD_SDGV` = SD_SDGV,
+      `no_SD` = no_SD,
+      `accessions_total` = accessions_total,
+      `SD_in_country_per` = SD_in_country_per,
+      `SD_only_in_country_per` = SD_only_in_country_per,
+      `SD_out_country_per` = SD_out_country_per,
+      `SD_SDGV_per` = SD_SDGV_per,
+      `no_SD_per` = no_SD_per
+    )
   return(results)
+  #return(df) # line used only for debugging
 }
 
-# Run functions
-by_genus <- safety_duplication_complete(df3)
-by_genebank <- safety_duplication_complete(df3, groupby = 'INSTCODE')
+### note, before running the analysis you need to drop genebanks that only old safety duplicates 
+### such as NOR051 and BRA003 from the datasets 
 
-
-
-# Save results in CSV files
-write.csv(by_genus, 'Genesys_results_by_genus.csv', row.names = FALSE)
-write.csv(by_genebank, 'Genesys_results_by_genebanks.csv', row.names = FALSE)
-
-
-
-
-
-
-
-
-##### re-run code using GCCS-metrics data, combined_allcrops
-
-# Column name synonyms:
-# INSTCODE = instCode
-# ACCENUMB = acceNumb
-# GENUS = acceptedGenus_TNRS
-# DUPLSITE = duplSite
-
-
-# Read in our dataset using all data sources (not SGSV) and rename "df2"
-library(readr)
-library(dplyr)
-library(tidyr)
-
-combined_allcrops <- read_csv("C:/Users/sgora/Desktop/GCCS-Metrics/Data/Combined_allsources/combined_allcrops.csv")
-df2 <- combined_allcrops
+# read dataset 
+df2<- read.csv("combined_allcrops_2025_02_14.csv", header = TRUE )
 
 # Prepare dataset 
 df2$instCode <- as.character(df2$instCode)
 df2$acceNumb <- as.character(df2$acceNumb)
-df2$ID <- paste(df2$instCode, df2$acceNumb, sep = "")
+df2$ID <- paste0(df2$instCode, df2$acceNumb)
+df2$duplSite <- as.character(df2$duplSite) # added while debugging
+df2  <- df2  %>% mutate(duplSite = str_replace_all(duplSite, " ", "")) # added while debugging because found some duplsite entries with whitespaces
 df3 <- df2 %>% distinct(ID, .keep_all = TRUE)
-df3$holding_country <- substr(df3$instCode, 1, 3)
+df3 <- df3 %>% mutate(holding_country = substr(instCode, 1, 3))
 
 # Calculate accurate accession counts separately
 accession_counts <- df2 %>% group_by(cropStrategy) %>% summarise(accessions_total = n())
 
 # Use value in duplSite to create a list with each institute code as item
-df3$duplSite_LIST <- strsplit(replace_na(df3$duplSite, ""), ";")
+df3 <- df3 %>% mutate(duplSite_LIST = strsplit(ifelse(is.na(duplSite), '', duplSite), ';'))
 
-duplicates_out_country <- function(site, pat) {
-  res <- 0 # Function to check for duplicates out of the country
-  for (i in site) {
-    if ("NOR051" %in% i) {
-      next
-    } else if (pat %in% i) {
-      next
-    } else if (i == "" || i == "nan") {
-      next
-    } else {
-      res <- 1
-      return(res)
-    }
-  }
-  return(res)
-}
-
-duplicates_in_country <- function(site, pat, holder) {
-  res <- 0  # Function to check for duplicates in the country
-  for (i in site) {
-    if ("NOR051" %in% i) {
-      next
-    } else if (i == holder) {
-      next
-    } else if (pat %in% i) {
-      res <- 1
-      return(res)
-    } else if (i == "" || i == "nan") {
-      next
-    } else {
-      res <- 0
-    }
-  }
-  return(res)
-}
-
-duplicates_SDGV <- function(site) {
-  res <- 0 # Function to check if there are duplicates at NOR051 (SGSV)
-  for (i in site) {
-    if ("NOR051" %in% i) {
-      res <- 1
-      return(res)
-    } else if (i == "" || i == "nan") {
-      next
-    } else {
-      res <- 0
-    }
-  }
-  return(res)
-}
-
-duplicates_only_in_country <- function(site, pat, holder) {
-  res <- 0 # Function to check for duplicates only in the country
-  for (i in site) {
-    if ("NOR051" %in% i) {
-      res <- 0
-      return(res)
-    } else if (i == holder) {
-      next
-    } else if (pat %in% i) {
-      res <- 1
-    } else if (i == "" || i == "nan") {
-      next
-    } else {
-      res <- 0
-      return(res)
-    }
-  }
-  return(res)
-}
-
-# Function to estimate safety duplications in Genesys dataset
-estimated_sd_genesys <- function(df, grouping_by = 'cropStrategy') {
-  sd <- df %>% filter(duplSite != "NOR051") %>% group_by_at(grouping_by) %>% summarise(SD = n())
-  sgsv <- df %>% filter(grepl("NOR051", duplSite, na.rm = TRUE)) %>% group_by_at(grouping_by) %>% summarise(SGSV = n())
-  grouped <- df %>% group_by_at(grouping_by) %>% summarise(`Genesys all` = n())
-  result <- full_join(sd, sgsv, by = grouping_by) %>% full_join(grouped, by = grouping_by) %>% replace_na(list(SD = 0, SGSV = 0))
-  return(result)
-}
-
-# Function to perform safety duplication analysis
-safety_duplication_complete <- function(df, groupby = 'cropStrategy') {
-  df <- df %>%
-    mutate(SD_out_country = mapply(duplicates_out_country, duplSite_LIST, holding_country),
-           SD_in_country = mapply(duplicates_in_country, duplSite_LIST, holding_country, instCode),
-           SD_SDGV = mapply(duplicates_SDGV, duplSite_LIST),
-           SD_only_in_country = mapply(duplicates_only_in_country, duplSite_LIST, holding_country, instCode)) %>%
-    mutate(all_sd = SD_in_country + SD_SDGV + SD_out_country,
-           no_SD = all_sd < 1)
-  
-  grouped <- df %>% group_by_at(groupby) %>%
-    summarise(SD_out_country = sum(SD_out_country),
-              SD_in_country = sum(SD_in_country),
-              SD_only_in_country = sum(SD_only_in_country),
-              no_SD = sum(no_SD),
-              SD_SDGV = sum(SD_SDGV)) %>%
-    left_join(accession_counts, by = groupby) %>%
-    arrange(desc(accessions_total)) %>%
-    mutate(SD_in_country_per = 100 * (SD_in_country / accessions_total),
-           SD_only_in_country_per = 100 * (SD_only_in_country / accessions_total),
-           SD_out_country_per = 100 * (SD_out_country / accessions_total),
-           SD_SDGV_per = 100 * (SD_SDGV / accessions_total),
-           no_SD_per = 100 * (no_SD / accessions_total)) %>%
-    select(cropStrategy, SD_in_country, SD_out_country, SD_only_in_country, SD_SDGV, no_SD, accessions_total,
-           SD_in_country_per, SD_only_in_country_per, SD_out_country_per, SD_SDGV_per, no_SD_per)
-  
-  results_genebank <- df %>% group_by(instCode) %>%
-    summarise(SD_out_country = sum(SD_out_country),
-              SD_in_country = sum(SD_in_country),
-              SD_only_in_country = sum(SD_only_in_country),
-              no_SD = sum(no_SD),
-              SD_SDGV = sum(SD_SDGV),
-              accessions_total = n()) %>%
-    arrange(desc(accessions_total)) %>%
-    mutate(SD_in_country_per = 100 * (SD_in_country / accessions_total),
-           SD_only_in_country_per = 100 * (SD_only_in_country / accessions_total),
-           SD_out_country_per = 100 * (SD_out_country / accessions_total),
-           SD_SDGV_per = 100 * (SD_SDGV / accessions_total),
-           no_SD_per = 100 * (no_SD / accessions_total)) %>%
-    select(instCode, SD_in_country, SD_out_country, SD_only_in_country, SD_SDGV, no_SD, accessions_total,
-           SD_in_country_per, SD_only_in_country_per, SD_out_country_per, SD_SDGV_per, no_SD_per)
-  
-  return(list(results_genus = grouped, results_genebank = results_genebank))
-}
-
-# Run functions 
-results <- safety_duplication_complete(df3)
-
-by_cropStrategy <- results$results_genus
-by_genebank <- results$results_genebank
+# Run functions to determine SD by cropStrategy
+by_crop <- safety_duplication_complete(df3, groupby = 'cropStrategy')
+# Run functions to determine SD by instCode (i.e. genebank)
+by_genebank <- safety_duplication_complete(df3, groupby = 'instCode')
 
 # Save results in CSV files
-write.csv(by_cropStrategy, 'allcrops_results_by_cropStrategy.csv', row.names = FALSE)
-write.csv(by_genebank, 'all_crops_results_by_genebank.csv', row.names = FALSE)
+by_crop <- apply(by_crop,2,as.character)
+write.csv(by_crop, 'results_by_crop.csv', row.names = FALSE)
+by_genebank <- apply(by_genebank,2,as.character)
+write.csv(by_genebank, 'rerun_results_by_genebanks.csv', row.names = FALSE)
 
+######### run same analysis for Genesys dataset   ############
+#1 read dataset 
+gen<- read.csv("Genesys_allcrops_unformatted.csv", header = TRUE )
+#2 keep fields needed and change names according to functions used 
+gen <- subset(gen, select = c(INSTCODE, ACCENUMB, GENUS, SPECIES, DUPLSITE))
+colnames(gen) <- c("instCode","acceNumb","genus","species","duplSite")
 
+#3 Prepare dataset 
+gen$instCode <- as.character(gen$instCode)
+gen$acceNumb <- as.character(gen$acceNumb)
+gen$ID <- paste0(gen$instCode, gen$acceNumb)
+gen$duplSite <- as.character(gen$duplSite) # added while debugging
+gen  <- gen  %>% mutate(duplSite = str_replace_all(duplSite, " ", "")) # added while debugging because found some duplsite entries with whitespaces
+gen2 <- gen %>% distinct(ID, .keep_all = TRUE) # maybe whitespaces should be eliminated from ID before this
+gen2 <- gen2 %>% mutate(holding_country = substr(instCode, 1, 3))
+
+#4 Use value in duplSite to create a list with each institute code as item
+gen2 <- gen2 %>% mutate(duplSite_LIST = strsplit(ifelse(is.na(duplSite), '', duplSite), ';'))
+
+#5 Run functions to determine SD by genus
+by_genus_genesys <- safety_duplication_complete(gen2, groupby = 'genus')
+
+#6 Run functions to determine SD by instCode (i.e. genebank)
+by_genebank_genesys <- safety_duplication_complete(gen2, groupby = 'instCode')
+
+#7 Save results in CSV files
+by_genus_genesys <- apply(by_genus_genesys,2,as.character)
+write.csv(by_genus_genesys, 'genesys_results_by_crop.csv', row.names = FALSE)
+by_genebank_genesys <- apply(by_genebank_genesys,2,as.character)
+write.csv(by_genebank_genesys, 'genesys_rerun_results_by_genebanks.csv', row.names = FALSE)
