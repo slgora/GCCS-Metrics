@@ -75,6 +75,7 @@ PlantsThatFeedTheWorld_indicator_relevantfields <- subset(PTFTW_indicator_averag
                                                                       "supply-digital_sequence_supply-digital_sequence_supply-digital_sequence_supply_genome",
                                                                       "supply-digital_sequence_supply-digital_sequence_supply-digital_sequence_supply_nucleotide",
                                                                       "supply-digital_sequence_supply-digital_sequence_supply-digital_sequence_supply_protein",
+                                                                      "supply-research_supply-research_supply_gbif-research_supply_gbif_taxon",
                                                                       "interdependence-faostat-food_supply-fat_supply_quantity_g",      # added interdependence data 2025_06_12                                                              
                                                                       "interdependence-faostat-food_supply-food_supply_kcal",                                                                  
                                                                       "interdependence-faostat-food_supply-food_supply_quantity_g",                                                            
