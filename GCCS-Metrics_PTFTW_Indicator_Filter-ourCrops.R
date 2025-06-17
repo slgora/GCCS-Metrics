@@ -2,34 +2,18 @@
 ### Data sources cleaning individually and Join 
 ### GCCS-Metrics_PTFTW_Indicator.R
 ### by Sarah Gora
-### Date created: 2024_11_27
-
-
-#### Set working directory ####
-setwd()
-setwd("C:/Users/sgora/Desktop/GCCS-Metrics/Code/DataCleaning_and_Join/GCCS-Metrics_PTFTW_Indicator.R")
-
+### Date updated: 2025_06_16
 
 #### Install packages ####
-install.packages("readr")
 library(readr)
-install.packages("readxl")
 library(readxl)
-install.packages("dplyr")
 library(dplyr)
-install.packages("tidyr")
 library(tidyr)
-install.packages("tidyverse")
 library(tidyverse)
+library(writexl)
 
-
-
-## Data read in:
-## Plants That Feed the World dataset
-## This is the RE-RUN USING THE indicator_averages FILE FROM THE DRIVE
-library(readr)
-PTFTW_indicator_average <- read_csv("C:/Users/sgora/Desktop/GCCS-Metrics/Data/PlantsThatFeedTheWorld/indicator_average.csv")
-View(PTFTW_indicator_average)
+## Data read in: Plants That Feed the World dataset
+PTFTW_indicator_average <- read_csv("C:/Users/sarah/Desktop/GCCS-Metrics/Data/PlantsThatFeedTheWorld/indicator_average.csv")
 
 # replace "Rice (Asian)" in crop field to be "Rice"
 PTFTW_indicator_average['crop'][PTFTW_indicator_average['crop'] == "Rice (Asian)"] <- "Rice"
@@ -37,9 +21,7 @@ PTFTW_indicator_average['crop'][PTFTW_indicator_average['crop'] == "Rice (Asian)
 PTFTW_indicator_average['crop'][PTFTW_indicator_average['crop'] == "Chickpeas"] <- "Chickpea"
 
 # filter by our crops first
-library(readxl)
-croplist <- read_excel("C:/Users/sgora/Desktop/GCCS-Metrics/Data/GCCS-Metrics_croplist.xlsx")
-View(croplist)
+croplist <- read_excel("C:/Users/sarah/Desktop/ex_situ_PGRFA_metrics/data_SG/croplist_PG.xlsx")
 
 # Subset relevant columns and drop rows with NA in PlantsthatFeedtheWorld_name 
 PlantsthatFeedtheWorld_ourcrops <- croplist %>% 
@@ -54,10 +36,7 @@ PTFTW_indicator_average <- PTFTW_indicator_average %>%
 PTFTW_indicator_average <- PlantsthatFeedtheWorld_ourcrops %>% 
   left_join(PTFTW_indicator_average, by = "PlantsthatFeedtheWorld_name")
 
-
-
 ## select which relevant fields to keep for the indicator file for our summaries and metrics
-
 PlantsThatFeedTheWorld_indicator_relevantfields <- subset(PTFTW_indicator_average, 
                                                           select = c( "PlantsthatFeedtheWorld_name",
                                                                       "CropStrategy",
@@ -95,13 +74,30 @@ PlantsThatFeedTheWorld_indicator_relevantfields <- subset(PTFTW_indicator_averag
                                                                       "supply-digital_sequence_supply-digital_sequence_supply-digital_sequence_supply_gene",
                                                                       "supply-digital_sequence_supply-digital_sequence_supply-digital_sequence_supply_genome",
                                                                       "supply-digital_sequence_supply-digital_sequence_supply-digital_sequence_supply_nucleotide",
-                                                                      "supply-digital_sequence_supply-digital_sequence_supply-digital_sequence_supply_protein" ))                         
+                                                                      "supply-digital_sequence_supply-digital_sequence_supply-digital_sequence_supply_protein",
+                                                                      "interdependence-faostat-food_supply-fat_supply_quantity_g",      # added interdependence data 2025_06_12                                                              
+                                                                      "interdependence-faostat-food_supply-food_supply_kcal",                                                                  
+                                                                      "interdependence-faostat-food_supply-food_supply_quantity_g",                                                            
+                                                                      "interdependence-faostat-food_supply-protein_supply_quantity_g",                                                         
+                                                                      "interdependence-faostat-production-area_harvested_ha",                                                                
+                                                                      "interdependence-faostat-production-gross_production_value_us",                                                        
+                                                                      "interdependence-faostat-production-production_quantity_tonnes",                                                          
+                                                                      "interdependence-faostat-trade-export_quantity_tonnes",                                                                   
+                                                                      "interdependence-faostat-trade-export_value_tonnes",                                                                     
+                                                                      "interdependence-faostat-trade-import_quantity_tonnes",                                                                  
+                                                                      "interdependence-faostat-trade-import_value_tonnes",                                                                    
+                                                                      "interdependence-faostat_change_over_time-food_supply-fat_supply_quantity_g",                                            
+                                                                      "interdependence-faostat_change_over_time-food_supply-food_supply_kcal",                                                
+                                                                      "interdependence-faostat_change_over_time-food_supply-food_supply_quantity_g",                                         
+                                                                      "interdependence-faostat_change_over_time-food_supply-protein_supply_quantity_g",                                        
+                                                                      "interdependence-faostat_change_over_time-production-area_harvested_ha",                                                
+                                                                      "interdependence-faostat_change_over_time-production-gross_production_value_us",                                       
+                                                                      "interdependence-faostat_change_over_time-production-production_quantity_tonnes",                                        
+                                                                      "interdependence-faostat_change_over_time-trade-export_quantity_tonnes",                                               
+                                                                      "interdependence-faostat_change_over_time-trade-export_value_tonnes",                                                     
+                                                                      "interdependence-faostat_change_over_time-trade-import_quantity_tonnes",                                                 
+                                                                      "interdependence-faostat_change_over_time-trade-import_value_tonnes"))                         
 
 # save file as Indicator file
-library(writexl)
-write_xlsx(PlantsThatFeedTheWorld_indicator_relevantfields, "C:/Users/sgora/Desktop/GCCS-Metrics/Data/PlantsThatFeedTheWorld/PTFTW_indicator_avg.xlsx")
-
-
-
-
+write_xlsx(PlantsThatFeedTheWorld_indicator_relevantfields, "C:/Users/sarah/Desktop/ex_situ_PGRFA_metrics/data_SG/PTFTW_indicator_ourcrops_2025-06-16.xlsx")
 
